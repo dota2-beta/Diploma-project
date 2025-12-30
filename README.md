@@ -1,6 +1,6 @@
 ### 1. Клонирование репозитория
 ```bash
-git clone https://github.com/ВАШ_НИКНЕЙМ/diploma-project.git
+git clone https://github.com/dota2-beta/Diploma-project.git
 cd diploma-project
 ```
 
