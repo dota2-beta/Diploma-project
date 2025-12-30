@@ -1,0 +1,14 @@
+backend/ml_service/sbert_model/
+#backend/ml_service/best_model.weights.h5
+
+venv/
+__pycache__/
+.idea/
+.vscode/
+*.pyc
+
+postgres_data/
+
+frontend/build/
+frontend/node_modules/
+backend/news-system/target/

@@ -1,0 +1,55 @@
+version: '3.8'
+
+services:
+  db:
+    image: postgres:15
+    container_name: news_db_container
+    restart: always
+    environment:
+      POSTGRES_DB: news_db
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: password
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data 
+
+  ml-service:
+    build: ./backend/ml_service
+    container_name: ml_service_container
+    restart: always
+    ports:
+      - "5000:5000"
+    volumes:
+      # ИСПРАВЛЕНО: полный путь к файлу внутри папки backend
+      - ./backend/ml_service/best_model.weights.h5:/app/best_model.weights.h5
+
+  backend:
+    # ИСПРАВЛЕНО: путь к твоей папке news-service
+    build: ./backend/news-service
+    container_name: java_backend_container
+    restart: always
+    ports:
+      - "8080:8080"
+    depends_on:
+      - db
+      - ml-service
+    environment:
+      SPRING_DATASOURCE_URL: jdbc:postgresql://db:5432/news_db
+      SPRING_DATASOURCE_USERNAME: postgres
+      SPRING_DATASOURCE_PASSWORD: password
+      SPRING_JPA_HIBERNATE_DDL_AUTO: update
+      SPRING_JPA_SHOW_SQL: "true"
+      ML_SERVICE_URL: http://ml-service:5000/predict
+
+  frontend:
+    build: ./frontend
+    container_name: react_frontend_container
+    restart: always
+    ports:
+      - "3000:80"
+    depends_on:
+      - backend
+
+volumes:
+  postgres_data:
