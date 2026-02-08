@@ -10,4 +10,6 @@ import org.springframework.stereotype.Repository;
 @Repository
 public interface NewsRepository extends JpaRepository<News, Long>, JpaSpecificationExecutor<News> {
     Page<News> findAll(Pageable pageable);
+    boolean existsByOriginalLink(String originalLink);
+    boolean existsByTitleAndContent(String title, String content);
 }

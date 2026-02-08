@@ -1,5 +1,6 @@
 package com.abs.newssystem.controller;
 
+import com.abs.newssystem.Dto.BulkUploadResponse;
 import com.abs.newssystem.model.News;
 import com.abs.newssystem.repository.NewsRepository;
 import com.abs.newssystem.repository.NewsSpecification;
@@ -12,6 +13,7 @@ import org.springframework.data.domain.Sort;
 import org.springframework.data.jpa.domain.Specification;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.web.multipart.MultipartFile;
 
 import java.time.LocalDate;
 import java.time.LocalDateTime;
@@ -41,6 +43,7 @@ public class NewsController {
                 "themeExtracurricular", "themeSport", "themeCultureArt",
                 "themeCareerEmployment", "themeAdministrationOfficial",
                 "themePartnershipCollaboration", "themeCivicPatriotic",
+                "themeAdmissionCampaign",
                 "personStudents", "personAcademics", "personStaffAdmin",
                 "personApplicants", "personAlumni", "personGeneral"
         };
@@ -90,6 +93,11 @@ public class NewsController {
                 request.getLink(),
                 pubDate          
         );
+    }
+
+    @PostMapping("/upload")
+    public ResponseEntity<BulkUploadResponse> uploadExcel(@RequestParam("file") MultipartFile file) {
+        return ResponseEntity.ok(newsService.processExcel(file));
     }
 
     @DeleteMapping("/{id}")

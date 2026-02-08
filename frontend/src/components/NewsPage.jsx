@@ -42,24 +42,21 @@ const NewsPage = () => {
         <Container maxWidth="md" sx={{ py: 4 }}>
             <Button 
                 startIcon={<ArrowBackIcon />} 
-                onClick={() => navigate(-1)} // Кнопка Назад
+                onClick={() => navigate(-1)}
                 sx={{ mb: 2 }}
             >
                 Назад к ленте
             </Button>
 
             <Paper elevation={3} sx={{ p: 4 }}>
-                {/* Дата */}
                 <Typography variant="caption" color="text.secondary">
                     {new Date(news.publishedDate).toLocaleDateString()}
                 </Typography>
 
-                {/* Заголовок */}
                 <Typography variant="h4" component="h1" sx={{ fontWeight: 'bold', mt: 1, mb: 2 }}>
                     {news.title}
                 </Typography>
 
-                {/* Теги */}
                 <Stack direction="row" spacing={1} sx={{ mb: 3, flexWrap: 'wrap', gap: 1 }}>
                     {getTags().map((tag) => (
                         <Chip 
@@ -71,7 +68,6 @@ const NewsPage = () => {
                     ))}
                 </Stack>
 
-                {/* Полный текст */}
                 <Typography variant="body1" sx={{ whiteSpace: 'pre-wrap', lineHeight: 1.8 }}>
                     {news.content}
                 </Typography>

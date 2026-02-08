@@ -35,6 +35,7 @@ public class News {
     private Double themeAdministrationOfficial;
     private Double themePartnershipCollaboration;
     private Double themeCivicPatriotic;
+    private Double themeAdmissionCampaign;
 
     // аудитория
     private Double personStudents;

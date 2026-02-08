@@ -3,8 +3,13 @@ import requests
 import time
 from datetime import datetime
 
+# URL твоего Java-бекенда
 API_URL = "http://localhost:8080/api/news"
-EXCEL_FILE = "news_re_labeled.xlsx"
+EXCEL_FILE = "backend/migration_script/news_re_labeled.xlsx"
+
+# ДАННЫЕ ДЛЯ АВТОРИЗАЦИИ (те, что мы прописали в AppConfig)
+ADMIN_USER = "admin"
+ADMIN_PASS = "admin123"
 
 def format_date(raw_date):
     """Приводит дату из Excel к формату dd.MM.yyyy для Java"""
@@ -18,16 +23,16 @@ def format_date(raw_date):
 
 def migrate():
     print(f"--- ЗАПУСК МИГРАЦИИ ---")
-    print(f"1. Читаем файл {EXCEL_FILE}...")
     
     try:
+        # Читаем Excel
         df = pd.read_excel(EXCEL_FILE)
     except FileNotFoundError:
-        print(f"ОШИБКА: Файл {EXCEL_FILE} не найден в папке со скриптом!")
+        print(f"ОШИБКА: Файл {EXCEL_FILE} не найден!")
         return
 
     total = len(df)
-    print(f"2. Найдено {total} записей. Начинаем отправку на сервер...")
+    print(f"Найдено {total} записей. Начинаем отправку...")
 
     success_count = 0
     error_count = 0
@@ -40,7 +45,6 @@ def migrate():
         date_str = format_date(row['News_Date'])
 
         if len(title) < 2 and len(content) < 2:
-            print(f"Skipping empty row {index}")
             continue
 
         payload = {
@@ -51,23 +55,30 @@ def migrate():
         }
 
         try:
-            response = requests.post(API_URL, json=payload)
+            # ДОБАВЛЯЕМ ПАРАМЕТР auth ДЛЯ АВТОРИЗАЦИИ
+            response = requests.post(
+                API_URL, 
+                json=payload, 
+                auth=(ADMIN_USER, ADMIN_PASS)
+            )
 
             if response.status_code == 200:
                 success_count += 1
                 if success_count % 10 == 0:
                     print(f"[{success_count}/{total}] Загружено: {title[:40]}...")
+            elif response.status_code == 401:
+                print("ОШИБКА: Неверный логин или пароль админа!")
+                return
             else:
                 error_count += 1
                 print(f"ERROR {response.status_code} на строке {index}: {response.text}")
 
-        except requests.exceptions.ConnectionError:
-            print("!!! ОШИБКА ПОДКЛЮЧЕНИЯ !!!")
-            print("Убедись, что Docker контейнеры запущены (Java backend).")
-            return
         except Exception as e:
             error_count += 1
             print(f"EXCEPTION на строке {index}: {e}")
+        
+        # Небольшая пауза, чтобы не перегрузить ML-сервис (т.к. Java будет его дергать)
+        time.sleep(0.05)
 
     print(f"\n--- МИГРАЦИЯ ЗАВЕРШЕНА ---")
     print(f"Успешно: {success_count}")

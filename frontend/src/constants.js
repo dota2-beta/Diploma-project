@@ -1,5 +1,4 @@
 export const CATEGORIES = {
-    // ТЕМАТИКА
     themeScienceResearch: "Наука и исследования",
     themeAcademicProcess: "Учебный процесс",
     themeAcademicContests: "Олимпиады и конкурсы",
@@ -10,8 +9,8 @@ export const CATEGORIES = {
     themeAdministrationOfficial: "Официально / Ректорат",
     themePartnershipCollaboration: "Партнерство",
     themeCivicPatriotic: "Патриотизм",
+    themeAdmissionCampaign: "Приёмная кампания",
 
-    // АУДИТОРИЯ
     personStudents: "Для студентов",
     personAcademics: "Для преподавателей",
     personStaffAdmin: "Для сотрудников",
