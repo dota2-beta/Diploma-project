@@ -1,5 +1,6 @@
 package com.abs.newssystem.controller;
 
+import com.abs.newssystem.Dto.AddNewsRequestDto;
 import com.abs.newssystem.Dto.BulkUploadResponse;
 import com.abs.newssystem.model.News;
 import com.abs.newssystem.repository.NewsRepository;
@@ -11,9 +12,11 @@ import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Sort;
 import org.springframework.data.jpa.domain.Specification;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
+import org.springframework.web.server.ResponseStatusException;
 
 import java.time.LocalDate;
 import java.time.LocalDateTime;
@@ -32,6 +35,7 @@ public class NewsController {
 
     @GetMapping
     public Page<News> getAllNews(
+            @RequestParam(required = false) String search,
             @RequestParam(defaultValue = "0") int page,
             @RequestParam(defaultValue = "10") int size,
             @RequestParam Map<String, String> allParams
@@ -61,6 +65,10 @@ public class NewsController {
 
         Specification<News> spec = NewsSpecification.filterByScores(filters);
 
+        if (search != null) {
+            spec = spec.and(NewsSpecification.searchByText(search));
+        }
+
         return newsRepository.findAll(
                 spec,
                 PageRequest.of(page, size, Sort.by("publishedDate").descending())
@@ -75,7 +83,7 @@ public class NewsController {
     }
 
     @PostMapping
-    public News addNews(@RequestBody AddNewsRequest request) {
+    public News addNews(@RequestBody AddNewsRequestDto request) {
         LocalDateTime pubDate = LocalDateTime.now();
         try {
             if (request.getDateStr() != null && !request.getDateStr().isEmpty()) {
@@ -100,16 +108,20 @@ public class NewsController {
         return ResponseEntity.ok(newsService.processExcel(file));
     }
 
+    @PutMapping("/{id}")
+    public News updateNews(@PathVariable Long id, @RequestBody News newsDetails) {
+        News news = newsRepository.findById(id)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Новость не найдена"));
+
+        news.setTitle(newsDetails.getTitle());
+        news.setContent(newsDetails.getContent());
+        news.setOriginalLink(newsDetails.getOriginalLink());
+
+        return newsRepository.save(news);
+    }
+
     @DeleteMapping("/{id}")
     public void deleteNews(@PathVariable Long id) {
         newsRepository.deleteById(id);
-    }
-
-    @Data
-    static class AddNewsRequest {
-        private String title;
-        private String content;
-        private String link;    
-        private String dateStr; 
     }
 }

@@ -1,5 +1,6 @@
 package com.abs.newssystem.controller;
 
+import com.abs.newssystem.Dto.LoginRequestDto;
 import com.abs.newssystem.repository.UserRepository;
 import lombok.Data;
 import lombok.RequiredArgsConstructor;
@@ -19,16 +20,10 @@ public class AuthController {
     private final PasswordEncoder passwordEncoder;
 
     @PostMapping("/login")
-    public ResponseEntity<?> login(@RequestBody LoginRequest request) {
+    public ResponseEntity<?> login(@RequestBody LoginRequestDto request) {
         return userRepository.findByUsername(request.getUsername())
                 .filter(user -> passwordEncoder.matches(request.getPassword(), user.getPassword()))
                 .map(user -> ResponseEntity.ok(Map.of("role", user.getRole(), "status", "success")))
                 .orElse(ResponseEntity.status(401).body(Map.of("message", "Неверный логин или пароль")));
-    }
-
-    @Data
-    static class LoginRequest {
-        private String username;
-        private String password;
     }
 }

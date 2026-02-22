@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
-import { Container, Grid, Typography, CircularProgress, Box } from '@mui/material';
+import { Container, Grid, Typography, CircularProgress, Box, TextField } from '@mui/material';
 import NewsCard from './NewsCard';
 import Sidebar from './Sidebar';
 import { CATEGORIES } from '../constants';
@@ -12,18 +12,32 @@ function MainPage() {
     const [news, setNews] = useState([]);
     const [loading, setLoading] = useState(false);
     const [filters, setFilters] = useState(initialFilters);
+    
+    const [search, setSearch] = useState('');
+    const [debouncedSearch, setDebouncedSearch] = useState('');
+
+    useEffect(() => {
+        const handler = setTimeout(() => {
+            setDebouncedSearch(search);
+        }, 600);
+
+        return () => clearTimeout(handler);
+    }, [search]);
 
     const fetchNews = async () => {
         setLoading(true);
         try {
-            const params = { size: 50 };
+            const params = { 
+                size: 50,
+                search: debouncedSearch
+            };
+            
             Object.keys(filters).forEach(key => {
                 if (filters[key] > 0) {
                     params[key] = filters[key];
                 }
             });
 
-            // запрос на бекенд
             const response = await axios.get('http://localhost:8080/api/news', { params });
             setNews(response.data.content);
         } catch (error) {
@@ -33,13 +47,9 @@ function MainPage() {
         }
     };
 
-    // при изменении фильтров грузится новость
     useEffect(() => {
-        const timer = setTimeout(() => {
-            fetchNews();
-        }, 500);
-        return () => clearTimeout(timer);
-    }, [filters]);
+        fetchNews();
+    }, [filters, debouncedSearch]);
 
     return (
         <Box sx={{ flexGrow: 1, bgcolor: '#f5f5f5', minHeight: '100vh' }}>
@@ -48,13 +58,25 @@ function MainPage() {
                     <Sidebar 
                         filters={filters} 
                         setFilters={setFilters} 
-                        onReset={() => setFilters(initialFilters)} 
+                        onReset={() => {
+                            setFilters(initialFilters);
+                            setSearch('');
+                        }} 
                     />
                 </Grid>
 
                 <Grid item xs={12} md={9} sx={{ p: 3 }}>
                     <Container maxWidth="md">
-                        <Typography variant="h4" sx={{ mb: 3, mt: 2, fontWeight: 'bold' }}>
+                        <TextField 
+                            fullWidth 
+                            variant="outlined" 
+                            placeholder="Поиск по заголовкам и тексту..." 
+                            value={search}
+                            onChange={(e) => setSearch(e.target.value)}
+                            sx={{ mb: 4, bgcolor: '#fff', borderRadius: 1 }}
+                        />
+
+                        <Typography variant="h4" sx={{ mb: 3, fontWeight: 'bold' }}>
                             Лента новостей университета
                         </Typography>
                         
@@ -72,7 +94,7 @@ function MainPage() {
                                 ))}
                                 {news.length === 0 && (
                                     <Typography variant="h6" align="center" sx={{ mt: 5 }}>
-                                        Нет новостей, подходящих под фильтры. Попробуйте уменьшить порог.
+                                        Ничего не найдено. Попробуйте изменить поиск или фильтры.
                                     </Typography>
                                 )}
                             </>

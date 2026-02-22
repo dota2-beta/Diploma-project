@@ -4,13 +4,24 @@ import axios from 'axios';
 import { Container, Typography, Chip, Stack, Box, Button, Paper, CircularProgress, Link } from '@mui/material';
 import ArrowBackIcon from '@mui/icons-material/ArrowBack';
 import { CATEGORIES } from '../constants';
+import { isAuthenticated, getAuthHeader } from '../services/auth';
+
+import EditIcon from '@mui/icons-material/Edit';
+import DeleteIcon from '@mui/icons-material/Delete';
 
 const NewsPage = () => {
     const { id } = useParams();
     const navigate = useNavigate();
     const [news, setNews] = useState(null);
     const [loading, setLoading] = useState(true);
+    const loggedIn = isAuthenticated();
 
+    const handleDelete = async () => {
+        if (window.confirm("Вы уверены, что хотите удалить эту новость?")) {
+            await axios.delete(`http://localhost:8080/api/news/${id}`, { headers: getAuthHeader() });
+            navigate('/');
+        }
+    };
     useEffect(() => {
         const fetchOneNews = async () => {
             try {
@@ -52,6 +63,17 @@ const NewsPage = () => {
                 <Typography variant="caption" color="text.secondary">
                     {new Date(news.publishedDate).toLocaleDateString()}
                 </Typography>
+
+                {loggedIn && (
+                    <Box sx={{ display: 'flex', justifyContent: 'flex-end', gap: 1, mb: 2 }}>
+                        <Button startIcon={<EditIcon />} onClick={() => navigate(`/admin/edit/${id}`)}>
+                            Редактировать
+                        </Button>
+                        <Button startIcon={<DeleteIcon />} color="error" onClick={handleDelete}>
+                            Удалить
+                        </Button>
+                    </Box>
+                )}
 
                 <Typography variant="h4" component="h1" sx={{ fontWeight: 'bold', mt: 1, mb: 2 }}>
                     {news.title}

@@ -7,6 +7,7 @@ import NewsPage from './components/NewsPage';
 import LoginPage from './components/LoginPage';
 import AddNewsPage from './components/AddNewsPage';
 import BulkUploadPage from './components/BulkUploadPage'; 
+import EditNewsPage from './components/EditNewsPage';
 
 function App() {
   const [notify, setNotify] = useState({ open: false, message: '', severity: 'success' });
@@ -26,6 +27,10 @@ function App() {
         <Route path="/login" element={<LoginPage onLoginSuccess={() => showNotify('Вход выполнен!', 'success')} />} />
         <Route path="/admin/add" element={<AddNewsPage onAddSuccess={() => showNotify('Новость добавлена и размечена ИИ!', 'success')} />} />
         <Route path="/admin/upload" element={<BulkUploadPage onUploadSuccess={() => showNotify('Файл обработан!', 'success')} />} />
+        <Route 
+          path="/admin/edit/:id" 
+          element={<EditNewsPage onUpdateSuccess={() => showNotify('Новость обновлена!', 'success')} />} 
+        />
       </Routes>
 
       <Snackbar 
