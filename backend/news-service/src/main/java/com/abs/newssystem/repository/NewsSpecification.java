@@ -32,11 +32,9 @@ public class NewsSpecification {
     public static Specification<News> searchByText(String text) {
         return (root, query, cb) -> {
             if (text == null || text.trim().isEmpty()) return null;
+
             String pattern = "%" + text.toLowerCase() + "%";
-            return cb.or(
-                    cb.like(cb.lower(root.get("title")), pattern),
-                    cb.like(cb.lower(root.get("content")), pattern)
-            );
+            return cb.like(cb.lower(root.get("title")), pattern);
         };
     }
 }
