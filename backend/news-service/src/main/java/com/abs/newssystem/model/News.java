@@ -5,7 +5,16 @@ import lombok.Data;
 import java.time.LocalDateTime;
 
 @Entity
-@Table(name = "news")
+@Table(name = "news", indexes = {
+        @Index(name = "idx_news_published_date", columnList = "publishedDate DESC"),
+
+        // индексы для самых популярных фильтров
+        @Index(name = "idx_news_theme_science", columnList = "themeScienceResearch"),
+        @Index(name = "idx_news_person_students", columnList = "personStudents"),
+        @Index(name = "idx_news_person_general", columnList = "personGeneral"),
+
+        @Index(name = "idx_news_original_link", columnList = "originalLink", unique = true)
+})
 @Data
 public class News {
 
@@ -23,6 +32,7 @@ public class News {
     private String originalLink;
 
     private LocalDateTime publishedDate;
+    private Boolean isAnalyzed;
 
     // тематика
     private Double themeScienceResearch;

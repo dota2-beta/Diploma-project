@@ -1,15 +1,25 @@
 package com.abs.newssystem.service;
 
 import com.abs.newssystem.Dto.BulkUploadResponse;
+import com.abs.newssystem.Dto.CachedPageDto;
 import com.abs.newssystem.Dto.NewsRequestDto;
 import com.abs.newssystem.Dto.PredictionResponseDto;
 import com.abs.newssystem.model.News;
 import com.abs.newssystem.repository.NewsRepository;
+import com.abs.newssystem.repository.NewsSpecification;
+import io.github.resilience4j.circuitbreaker.annotation.CircuitBreaker;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.poi.ss.usermodel.*;
 import org.apache.poi.xssf.usermodel.XSSFWorkbook;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.cache.annotation.CacheEvict;
+import org.springframework.cache.annotation.Cacheable;
+import org.springframework.cache.annotation.Caching;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Sort;
+import org.springframework.data.jpa.domain.Specification;
 import org.springframework.stereotype.Service;
 import org.springframework.web.client.RestTemplate;
 import org.springframework.web.multipart.MultipartFile;
@@ -28,11 +38,52 @@ import java.util.Map;
 public class NewsService {
 
     private final NewsRepository newsRepository;
-    private final RestTemplate restTemplate;
+    private final MlClientService mlClientService;
 
-    @Value("${ML_SERVICE_URL:http://localhost:5000/predict}")
-    private String mlServiceUrl;
+    @Cacheable(value = "news_list", key = "{#search, #page, #size, #allParams}")
+    public CachedPageDto<News> getAllNews(String search, int page, int size, Map<String, String> allParams) {
+        Map<String, Double> filters = new HashMap<>();
 
+        String[] allowedFields = {
+                "themeScienceResearch", "themeAcademicProcess", "themeAcademicContests",
+                "themeExtracurricular", "themeSport", "themeCultureArt",
+                "themeCareerEmployment", "themeAdministrationOfficial",
+                "themePartnershipCollaboration", "themeCivicPatriotic",
+                "themeAdmissionCampaign",
+                "personStudents", "personAcademics", "personStaffAdmin",
+                "personApplicants", "personAlumni", "personGeneral"
+        };
+
+        for (String field : allowedFields) {
+            if (allParams.containsKey(field)) {
+                try {
+                    Double val = Double.parseDouble(allParams.get(field));
+                    filters.put(field, val);
+                } catch (NumberFormatException e) {
+                    // ..
+                }
+            }
+        }
+
+        Specification<News> spec = NewsSpecification.filterByScores(filters);
+
+        if (search != null) {
+            spec = spec.and(NewsSpecification.searchByText(search));
+        }
+
+        Page<News> news = newsRepository.findAll(
+                spec,
+                PageRequest.of(page, size, Sort.by("publishedDate").descending())
+        );
+        return new CachedPageDto<>(news);
+    }
+
+    @Cacheable(value = "single_news", key = "#id")
+    public News getById(Long id) {
+        return newsRepository.findById(id).orElse(null);
+    }
+
+    @CacheEvict(value = "news_list", allEntries = true)
     public News analyzeAndSave(String title, String content, String link, LocalDateTime date) {
         if (link != null && !link.isEmpty() && newsRepository.existsByOriginalLink(link)) {
             log.warn("Пропуск: Новость с такой ссылкой уже есть.");
@@ -45,13 +96,8 @@ public class NewsService {
         }
 
         String fullText = (title != null ? title : "") + ". " + (content != null ? content : "");
-        NewsRequestDto request = new NewsRequestDto(fullText);
 
-        PredictionResponseDto response = restTemplate.postForObject(
-                mlServiceUrl,
-                request,
-                PredictionResponseDto.class
-        );
+        Map<String, Double> probs = mlClientService.getPredictions(fullText);
 
         News news = new News();
         news.setTitle(title);
@@ -59,30 +105,55 @@ public class NewsService {
         news.setOriginalLink(link);
         news.setPublishedDate(date != null ? date : LocalDateTime.now());
 
-        if (response != null && response.getProbabilities() != null) {
-            Map<String, Double> probs = response.getProbabilities();
-
-            news.setThemeScienceResearch(probs.getOrDefault("theme_science_research", 0.0));
-            news.setThemeAcademicProcess(probs.getOrDefault("theme_academic_process", 0.0));
-            news.setThemeAcademicContests(probs.getOrDefault("theme_academic_contests", 0.0));
-            news.setThemeExtracurricular(probs.getOrDefault("theme_extracurricular", 0.0));
-            news.setThemeSport(probs.getOrDefault("theme_sport", 0.0));
-            news.setThemeCultureArt(probs.getOrDefault("theme_culture_art", 0.0));
-            news.setThemeCareerEmployment(probs.getOrDefault("theme_career_employment", 0.0));
-            news.setThemeAdministrationOfficial(probs.getOrDefault("theme_administration_official", 0.0));
-            news.setThemePartnershipCollaboration(probs.getOrDefault("theme_partnership_collaboration", 0.0));
-            news.setThemeCivicPatriotic(probs.getOrDefault("theme_civic_patriotic", 0.0));
-            news.setThemeAdmissionCampaign(probs.getOrDefault("theme_admission_campaign", 0.0));
-            
-            news.setPersonStudents(probs.getOrDefault("person_students", 0.0));
-            news.setPersonAcademics(probs.getOrDefault("person_academics", 0.0));
-            news.setPersonStaffAdmin(probs.getOrDefault("person_staff_admin", 0.0));
-            news.setPersonApplicants(probs.getOrDefault("person_applicants", 0.0));
-            news.setPersonAlumni(probs.getOrDefault("person_alumni", 0.0));
-            news.setPersonGeneral(probs.getOrDefault("person_general", 0.0));
+        if (probs != null) {
+            news.setIsAnalyzed(true);
+            mapProbabilities(news, probs);
+        } else {
+            news.setIsAnalyzed(false); // если fallback сработал
         }
 
         return newsRepository.save(news);
+    }
+
+    @Caching(evict = {
+            @CacheEvict(value = "news_list", allEntries = true),
+            @CacheEvict(value = "single_news", key = "#id")
+    })
+    public News update(Long id, News details) {
+        News news = newsRepository.findById(id).orElseThrow();
+        news.setTitle(details.getTitle());
+        news.setContent(details.getContent());
+        news.setOriginalLink(details.getOriginalLink());
+        return newsRepository.save(news);
+    }
+
+    @Caching(evict = {
+            @CacheEvict(value = "news_list", allEntries = true),
+            @CacheEvict(value = "single_news", key = "#id")
+    })
+    public void delete(Long id) {
+        newsRepository.deleteById(id);
+    }
+
+    public static void mapProbabilities(News news, Map<String, Double> probs) {
+        news.setThemeScienceResearch(probs.getOrDefault("theme_science_research", 0.0));
+        news.setThemeAcademicProcess(probs.getOrDefault("theme_academic_process", 0.0));
+        news.setThemeAcademicContests(probs.getOrDefault("theme_academic_contests", 0.0));
+        news.setThemeExtracurricular(probs.getOrDefault("theme_extracurricular", 0.0));
+        news.setThemeSport(probs.getOrDefault("theme_sport", 0.0));
+        news.setThemeCultureArt(probs.getOrDefault("theme_culture_art", 0.0));
+        news.setThemeCareerEmployment(probs.getOrDefault("theme_career_employment", 0.0));
+        news.setThemeAdministrationOfficial(probs.getOrDefault("theme_administration_official", 0.0));
+        news.setThemePartnershipCollaboration(probs.getOrDefault("theme_partnership_collaboration", 0.0));
+        news.setThemeCivicPatriotic(probs.getOrDefault("theme_civic_patriotic", 0.0));
+        news.setThemeAdmissionCampaign(probs.getOrDefault("theme_admission_campaign", 0.0));
+
+        news.setPersonStudents(probs.getOrDefault("person_students", 0.0));
+        news.setPersonAcademics(probs.getOrDefault("person_academics", 0.0));
+        news.setPersonStaffAdmin(probs.getOrDefault("person_staff_admin", 0.0));
+        news.setPersonApplicants(probs.getOrDefault("person_applicants", 0.0));
+        news.setPersonAlumni(probs.getOrDefault("person_alumni", 0.0));
+        news.setPersonGeneral(probs.getOrDefault("person_general", 0.0));
     }
 
     public BulkUploadResponse processExcel(MultipartFile file) {

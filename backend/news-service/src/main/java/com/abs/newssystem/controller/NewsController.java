@@ -2,12 +2,17 @@ package com.abs.newssystem.controller;
 
 import com.abs.newssystem.Dto.AddNewsRequestDto;
 import com.abs.newssystem.Dto.BulkUploadResponse;
+import com.abs.newssystem.Dto.CachedPageDto;
 import com.abs.newssystem.model.News;
 import com.abs.newssystem.repository.NewsRepository;
 import com.abs.newssystem.repository.NewsSpecification;
 import com.abs.newssystem.service.NewsService;
 import lombok.Data;
 import lombok.RequiredArgsConstructor;
+import org.springframework.cache.annotation.CacheEvict;
+import org.springframework.cache.annotation.Cacheable;
+import org.springframework.cache.annotation.Caching;
+import org.springframework.context.annotation.Lazy;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Sort;
@@ -31,59 +36,24 @@ import java.util.Map;
 public class NewsController {
 
     private final NewsService newsService;
-    private final NewsRepository newsRepository;
 
     @GetMapping
-    public Page<News> getAllNews(
+    public ResponseEntity<CachedPageDto<News>> getAllNews(
             @RequestParam(required = false) String search,
             @RequestParam(defaultValue = "0") int page,
-            @RequestParam(defaultValue = "10") int size,
-            @RequestParam Map<String, String> allParams
-    ) {
-        Map<String, Double> filters = new HashMap<>();
-
-        String[] allowedFields = {
-                "themeScienceResearch", "themeAcademicProcess", "themeAcademicContests",
-                "themeExtracurricular", "themeSport", "themeCultureArt",
-                "themeCareerEmployment", "themeAdministrationOfficial",
-                "themePartnershipCollaboration", "themeCivicPatriotic",
-                "themeAdmissionCampaign",
-                "personStudents", "personAcademics", "personStaffAdmin",
-                "personApplicants", "personAlumni", "personGeneral"
-        };
-
-        for (String field : allowedFields) {
-            if (allParams.containsKey(field)) {
-                try {
-                    Double val = Double.parseDouble(allParams.get(field));
-                    filters.put(field, val);
-                } catch (NumberFormatException e) {
-                    // ..
-                }
-            }
-        }
-
-        Specification<News> spec = NewsSpecification.filterByScores(filters);
-
-        if (search != null) {
-            spec = spec.and(NewsSpecification.searchByText(search));
-        }
-
-        return newsRepository.findAll(
-                spec,
-                PageRequest.of(page, size, Sort.by("publishedDate").descending())
-        );
+            @RequestParam(defaultValue = "50") int size,
+            @RequestParam Map<String, String> allParams) {
+        return ResponseEntity.ok(newsService.getAllNews(search, page, size, allParams));
     }
 
     @GetMapping("/{id}")
     public ResponseEntity<News> getNewsById(@PathVariable Long id) {
-        return newsRepository.findById(id)
-                .map(ResponseEntity::ok)
-                .orElse(ResponseEntity.notFound().build());
+        News news = newsService.getById(id);
+        return news != null ? ResponseEntity.ok(news) : ResponseEntity.notFound().build();
     }
 
     @PostMapping
-    public News addNews(@RequestBody AddNewsRequestDto request) {
+    public ResponseEntity<News> addNews(@RequestBody AddNewsRequestDto request) {
         LocalDateTime pubDate = LocalDateTime.now();
         try {
             if (request.getDateStr() != null && !request.getDateStr().isEmpty()) {
@@ -95,33 +65,19 @@ public class NewsController {
             System.err.println("Ошибка парсинга даты: " + request.getDateStr());
         }
 
-        return newsService.analyzeAndSave(
-                request.getTitle(),
-                request.getContent(),
-                request.getLink(),
-                pubDate          
-        );
-    }
-
-    @PostMapping("/upload")
-    public ResponseEntity<BulkUploadResponse> uploadExcel(@RequestParam("file") MultipartFile file) {
-        return ResponseEntity.ok(newsService.processExcel(file));
+        News saved = newsService.analyzeAndSave(request.getTitle(), request.getContent(),
+                request.getLink(), pubDate);
+        return ResponseEntity.status(HttpStatus.CREATED).body(saved);
     }
 
     @PutMapping("/{id}")
-    public News updateNews(@PathVariable Long id, @RequestBody News newsDetails) {
-        News news = newsRepository.findById(id)
-                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Новость не найдена"));
-
-        news.setTitle(newsDetails.getTitle());
-        news.setContent(newsDetails.getContent());
-        news.setOriginalLink(newsDetails.getOriginalLink());
-
-        return newsRepository.save(news);
+    public ResponseEntity<News> updateNews(@PathVariable Long id, @RequestBody News details) {
+        return ResponseEntity.ok(newsService.update(id, details));
     }
 
     @DeleteMapping("/{id}")
-    public void deleteNews(@PathVariable Long id) {
-        newsRepository.deleteById(id);
+    public ResponseEntity<Void> deleteNews(@PathVariable Long id) {
+        newsService.delete(id);
+        return ResponseEntity.noContent().build(); // Код 204
     }
 }

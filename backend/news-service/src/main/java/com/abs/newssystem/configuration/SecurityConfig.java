@@ -37,6 +37,7 @@ public class SecurityConfig {
                         .requestMatchers(HttpMethod.PUT, "/api/news/**").hasRole("ADMIN")
                         .requestMatchers(HttpMethod.DELETE, "/api/news/**").hasRole("ADMIN")
 
+                        .requestMatchers("/actuator/**").hasRole("ADMIN")
                         .anyRequest().authenticated()
                 )
                 .httpBasic(Customizer.withDefaults())
