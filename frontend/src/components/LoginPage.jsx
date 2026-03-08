@@ -19,12 +19,13 @@ const LoginPage = ({ onLoginSuccess }) => {
                 { headers: { 'Authorization': `Basic ${authString}` } }
             );
             saveAuth(username, password);
-            if (onLoginSuccess) onLoginSuccess(); 
+            if (onLoginSuccess) onLoginSuccess('Вход выполнен успешно!', 'success');
             navigate('/'); 
         } catch (err) {
             setError('Неверный логин или пароль');
         }
     };
+    
 
     return (
         <Container maxWidth="xs" sx={{ mt: 10 }}>

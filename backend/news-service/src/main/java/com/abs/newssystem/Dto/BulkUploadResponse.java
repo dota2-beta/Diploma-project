@@ -10,5 +10,6 @@ import java.util.List;
 public class BulkUploadResponse {
     private int successCount;
     private int errorCount;
+    private int skippedCount;
     private List<String> failedTitles;
 }

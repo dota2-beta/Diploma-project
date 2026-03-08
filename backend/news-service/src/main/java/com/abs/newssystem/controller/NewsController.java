@@ -1,32 +1,18 @@
 package com.abs.newssystem.controller;
 
 import com.abs.newssystem.Dto.AddNewsRequestDto;
-import com.abs.newssystem.Dto.BulkUploadResponse;
 import com.abs.newssystem.Dto.CachedPageDto;
 import com.abs.newssystem.model.News;
-import com.abs.newssystem.repository.NewsRepository;
-import com.abs.newssystem.repository.NewsSpecification;
 import com.abs.newssystem.service.NewsService;
-import lombok.Data;
 import lombok.RequiredArgsConstructor;
-import org.springframework.cache.annotation.CacheEvict;
-import org.springframework.cache.annotation.Cacheable;
-import org.springframework.cache.annotation.Caching;
-import org.springframework.context.annotation.Lazy;
-import org.springframework.data.domain.Page;
-import org.springframework.data.domain.PageRequest;
-import org.springframework.data.domain.Sort;
-import org.springframework.data.jpa.domain.Specification;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
-import org.springframework.web.server.ResponseStatusException;
 
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
-import java.util.HashMap;
 import java.util.Map;
 
 @RestController
@@ -72,7 +58,16 @@ public class NewsController {
 
     @PutMapping("/{id}")
     public ResponseEntity<News> updateNews(@PathVariable Long id, @RequestBody News details) {
+        if (details.getOriginalLink() != null && details.getOriginalLink().trim().isEmpty()) {
+            details.setOriginalLink(null);
+        }
         return ResponseEntity.ok(newsService.update(id, details));
+    }
+
+    @PostMapping("/upload")
+    public ResponseEntity<String> uploadExcel(@RequestParam("file") MultipartFile file) {
+        newsService.startExcelImport(file);
+        return ResponseEntity.ok("Файл принят. Новости скоро будут добавлены и размечены.");
     }
 
     @DeleteMapping("/{id}")

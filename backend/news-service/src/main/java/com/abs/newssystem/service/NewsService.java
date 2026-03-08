@@ -1,18 +1,14 @@
 package com.abs.newssystem.service;
 
-import com.abs.newssystem.Dto.BulkUploadResponse;
 import com.abs.newssystem.Dto.CachedPageDto;
-import com.abs.newssystem.Dto.NewsRequestDto;
-import com.abs.newssystem.Dto.PredictionResponseDto;
+import com.abs.newssystem.configuration.RabbitConfig;
 import com.abs.newssystem.model.News;
 import com.abs.newssystem.repository.NewsRepository;
 import com.abs.newssystem.repository.NewsSpecification;
-import io.github.resilience4j.circuitbreaker.annotation.CircuitBreaker;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.poi.ss.usermodel.*;
-import org.apache.poi.xssf.usermodel.XSSFWorkbook;
-import org.springframework.beans.factory.annotation.Value;
+import org.springframework.amqp.rabbit.core.RabbitTemplate;
 import org.springframework.cache.annotation.CacheEvict;
 import org.springframework.cache.annotation.Cacheable;
 import org.springframework.cache.annotation.Caching;
@@ -20,16 +16,18 @@ import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Sort;
 import org.springframework.data.jpa.domain.Specification;
+import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;
-import org.springframework.web.client.RestTemplate;
 import org.springframework.web.multipart.MultipartFile;
 
+import java.io.ByteArrayInputStream;
+import java.io.IOException;
+import java.io.InputStream;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
-import java.util.ArrayList;
+import java.time.format.DateTimeParseException;
 import java.util.HashMap;
-import java.util.List;
 import java.util.Map;
 
 @Service
@@ -38,7 +36,10 @@ import java.util.Map;
 public class NewsService {
 
     private final NewsRepository newsRepository;
-    private final MlClientService mlClientService;
+    private final RabbitTemplate rabbitTemplate;
+
+    private static final String DATE_REGEX = "^\\d{2}\\.\\d{2}\\.\\d{4}$";
+    private static final DateTimeFormatter DATE_FORMATTER = DateTimeFormatter.ofPattern("dd.MM.yyyy");
 
     @Cacheable(value = "news_list", key = "{#search, #page, #size, #allParams}")
     public CachedPageDto<News> getAllNews(String search, int page, int size, Map<String, String> allParams) {
@@ -85,7 +86,9 @@ public class NewsService {
 
     @CacheEvict(value = "news_list", allEntries = true)
     public News analyzeAndSave(String title, String content, String link, LocalDateTime date) {
-        if (link != null && !link.isEmpty() && newsRepository.existsByOriginalLink(link)) {
+        String cleanLink = (link == null || link.trim().isEmpty()) ? null : link.trim();
+
+        if (cleanLink != null && newsRepository.existsByOriginalLink(cleanLink)) {
             log.warn("Пропуск: Новость с такой ссылкой уже есть.");
             return null;
         }
@@ -95,24 +98,22 @@ public class NewsService {
             return null;
         }
 
-        String fullText = (title != null ? title : "") + ". " + (content != null ? content : "");
-
-        Map<String, Double> probs = mlClientService.getPredictions(fullText);
-
         News news = new News();
         news.setTitle(title);
         news.setContent(content);
         news.setOriginalLink(link);
         news.setPublishedDate(date != null ? date : LocalDateTime.now());
+        news.setIsAnalyzed(false);
 
-        if (probs != null) {
-            news.setIsAnalyzed(true);
-            mapProbabilities(news, probs);
-        } else {
-            news.setIsAnalyzed(false); // если fallback сработал
-        }
+        News saved = newsRepository.save(news);
 
-        return newsRepository.save(news);
+        Map<String, Object> task = Map.of(
+                "id", saved.getId(),
+                "text", saved.getTitle() + ". " + saved.getContent()
+        );
+        rabbitTemplate.convertAndSend(RabbitConfig.TASKS_QUEUE, task);
+
+        return saved;
     }
 
     @Caching(evict = {
@@ -135,7 +136,7 @@ public class NewsService {
         newsRepository.deleteById(id);
     }
 
-    public static void mapProbabilities(News news, Map<String, Double> probs) {
+    public static void updateWeights(News news, Map<String, Double> probs) {
         news.setThemeScienceResearch(probs.getOrDefault("theme_science_research", 0.0));
         news.setThemeAcademicProcess(probs.getOrDefault("theme_academic_process", 0.0));
         news.setThemeAcademicContests(probs.getOrDefault("theme_academic_contests", 0.0));
@@ -156,91 +157,84 @@ public class NewsService {
         news.setPersonGeneral(probs.getOrDefault("person_general", 0.0));
     }
 
-    public BulkUploadResponse processExcel(MultipartFile file) {
-        int success = 0;
-        int errors = 0;
-        List<String> failedTitles = new ArrayList<>();
+    public void startExcelImport(MultipartFile file) {
+        try {
+            byte[] fileBytes = file.getBytes();
+            // Просто запускаем асинхронный метод
+            processExcelAsync(fileBytes);
+        } catch (IOException e) {
+            log.error("Ошибка при чтении файла Excel", e);
+            throw new RuntimeException("Не удалось прочитать файл");
+        }
+    }
 
-        try (Workbook workbook = WorkbookFactory.create(file.getInputStream())) {
+    @Async("importExecutor")
+    public void processExcelAsync(byte[] fileBytes) {
+        log.info("Начата фоновая обработка Excel файла...");
+
+        int count = 0;
+
+        try (InputStream is = new ByteArrayInputStream(fileBytes);
+             Workbook workbook = WorkbookFactory.create(is)) {
+
             Sheet sheet = workbook.getSheetAt(0);
             Row headerRow = sheet.getRow(0);
-
-            if (headerRow == null) throw new RuntimeException("Файл пуст");
+            if (headerRow == null) return;
 
             Map<String, Integer> colMap = new HashMap<>();
             for (Cell cell : headerRow) {
-                colMap.put(cell.getStringCellValue().trim(), cell.getColumnIndex());
-            }
-
-            if (!colMap.containsKey("News_Title") || !colMap.containsKey("News_Text")) {
-                throw new RuntimeException("В файле отсутствуют необходимые колонки (News_Title или News_Text)");
+                colMap.put(cell.getStringCellValue().trim().toLowerCase(), cell.getColumnIndex());
             }
 
             for (int i = 1; i <= sheet.getLastRowNum(); i++) {
                 Row row = sheet.getRow(i);
                 if (row == null) continue;
 
-                String title = getCellValue(row, colMap.get("News_Title")).trim();
-                String content = getCellValue(row, colMap.get("News_Text")).trim();
+                String title = getCellValue(row, colMap.getOrDefault("news_title", -1)).trim();
+                String content = getCellValue(row, colMap.getOrDefault("news_text", -1)).trim();
+                String link = getCellValue(row, colMap.getOrDefault("news_link", -1)).trim();
+                String dateRaw = getCellValue(row, colMap.getOrDefault("news_date", -1)).trim();
 
-                if (title.isEmpty() && content.isEmpty()) {
-                    continue;
+                if (title.isEmpty() && content.isEmpty()) continue;
+
+                LocalDateTime date = LocalDateTime.now();
+                if (!dateRaw.isEmpty() && dateRaw.matches(DATE_REGEX)) {
+                    try {
+                        date = LocalDate.parse(dateRaw, DATE_FORMATTER).atStartOfDay();
+                    } catch (DateTimeParseException e) {
+                        log.warn("Невалидная дата {}, заменена на текущую", dateRaw);
+                    }
                 }
 
                 try {
-                    String link = getCellValue(row, colMap.get("News_Link"));
-                    LocalDateTime date = parseExcelDate(row.getCell(colMap.get("News_Date")));
-
                     analyzeAndSave(title, content, link, date);
-                    success++;
-
-                    if (success % 5 == 0)
-                        log.info("Загружено новостей: {}", success);
-
+                    count++;
                 } catch (Exception e) {
-                    errors++;
-                    failedTitles.add(title.isEmpty() ? "Строка " + (i + 1) : title);
-                    log.warn("Ошибка на строке {}: {}", i, e.getMessage());
+                    log.error("Ошибка при сохранении строки {}: {}", i, e.getMessage());
                 }
             }
+            log.info("Фоновая обработка завершена. Отправлено в очередь: {} новостей", count);
+
         } catch (Exception e) {
-            e.printStackTrace();
-            throw new RuntimeException("Ошибка чтения Excel: " + e.getMessage());
+            log.error("Критическая ошибка при разборе Excel", e);
         }
-        return new BulkUploadResponse(success, errors, failedTitles);
     }
 
     private String getCellValue(Row row, Integer colIndex) {
-        if (colIndex == null) return "";
+        if (colIndex == null || colIndex < 0) return "";
         Cell cell = row.getCell(colIndex);
         if (cell == null) return "";
 
-        switch (cell.getCellType()) {
-            case STRING: return cell.getStringCellValue();
-            case NUMERIC:
-                if (DateUtil.isCellDateFormatted(cell)) return cell.getLocalDateTimeCellValue().toString();
-                return String.valueOf((long) cell.getNumericCellValue());
-            default: return "";
-        }
-    }
-
-    private LocalDateTime parseExcelDate(Cell cell) {
-        if (cell == null) return LocalDateTime.now();
-
-        try {
-            if (cell.getCellType() == CellType.NUMERIC && DateUtil.isCellDateFormatted(cell)) {
-                return cell.getLocalDateTimeCellValue();
-            }
-            if (cell.getCellType() == CellType.STRING) {
-                String val = cell.getStringCellValue().trim();
-                if (!val.isEmpty()) {
-                    DateTimeFormatter formatter = DateTimeFormatter.ofPattern("dd.MM.yyyy");
-                    return LocalDate.parse(val, formatter).atStartOfDay();
+        return switch (cell.getCellType()) {
+            case STRING -> cell.getStringCellValue();
+            case NUMERIC -> {
+                if (DateUtil.isCellDateFormatted(cell)) {
+                    yield cell.getLocalDateTimeCellValue().format(DATE_FORMATTER);
                 }
+                yield String.valueOf((long) cell.getNumericCellValue());
             }
-        } catch (Exception e) {
-            log.warn("Не удалось спарсить дату, ставим текущую");
-        }
-        return LocalDateTime.now();
+            case BOOLEAN -> String.valueOf(cell.getBooleanCellValue());
+            default -> "";
+        };
     }
 }

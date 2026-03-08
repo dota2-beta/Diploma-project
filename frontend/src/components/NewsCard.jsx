@@ -38,6 +38,14 @@ const NewsCard = ({ news }) => {
                             variant={tag.score > 0.8 ? "filled" : "outlined"}
                         />
                     ))}
+                    {!news.isAnalyzed && (
+                        <Chip 
+                            label="Обработка ИИ..." 
+                            size="small" 
+                            variant="outlined" 
+                            sx={{ fontStyle: 'italic', borderStyle: 'dashed' }} 
+                        />
+                    )}
                 </Stack>
 
                 <Typography variant="body2" color="text.secondary">

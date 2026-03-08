@@ -54,4 +54,12 @@ public class News {
     private Double personApplicants;
     private Double personAlumni;
     private Double personGeneral;
+
+    @PrePersist
+    @PreUpdate
+    public void ensureLinkIsNull() {
+        if (this.originalLink != null && this.originalLink.trim().isEmpty()) {
+            this.originalLink = null;
+        }
+    }
 }

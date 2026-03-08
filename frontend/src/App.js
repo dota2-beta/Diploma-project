@@ -25,8 +25,14 @@ function App() {
         <Route path="/" element={<MainPage />} />
         <Route path="/news/:id" element={<NewsPage />} />
         <Route path="/login" element={<LoginPage onLoginSuccess={() => showNotify('Вход выполнен!', 'success')} />} />
-        <Route path="/admin/add" element={<AddNewsPage onAddSuccess={() => showNotify('Новость добавлена и размечена ИИ!', 'success')} />} />
-        <Route path="/admin/upload" element={<BulkUploadPage onUploadSuccess={() => showNotify('Файл обработан!', 'success')} />} />
+        <Route 
+          path="/admin/add" 
+          element={<AddNewsPage onAddSuccess={showNotify} />} 
+        />
+        <Route 
+          path="/admin/upload" 
+          element={<BulkUploadPage onUploadSuccess={(msg, sev) => showNotify(msg, sev)} />} 
+        />
         <Route 
           path="/admin/edit/:id" 
           element={<EditNewsPage onUpdateSuccess={() => showNotify('Новость обновлена!', 'success')} />} 
@@ -35,11 +41,11 @@ function App() {
 
       <Snackbar 
         open={notify.open} 
-        autoHideDuration={4000} 
+        autoHideDuration={6000}
         onClose={handleCloseNotify}
-        anchorOrigin={{ vertical: 'bottom', horizontal: 'center' }}
+        anchorOrigin={{ vertical: 'top', horizontal: 'right' }}
       >
-        <Alert onClose={handleCloseNotify} severity={notify.severity} sx={{ width: '100%' }}>
+        <Alert onClose={handleCloseNotify} severity={notify.severity} sx={{ width: '100%', whiteSpace: 'pre-line' }}>
           {notify.message}
         </Alert>
       </Snackbar>

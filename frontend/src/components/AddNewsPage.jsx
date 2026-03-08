@@ -12,15 +12,19 @@ const AddNewsPage = ({ onAddSuccess }) => {
     const handleSubmit = async (e) => {
         e.preventDefault();
         setLoading(true);
+
         try {
             await axios.post('http://localhost:8080/api/news', form, {
                 headers: getAuthHeader()
             });
-            if (onAddSuccess) onAddSuccess();
+            
+            if (onAddSuccess) {
+                onAddSuccess("Новость добавлена и отправлена на разметку!", "success");
+            }
             navigate('/');
         } catch (err) {
-            alert("Ошибка доступа. Возможно, нужно снова войти в систему.");
-            navigate('/login');
+            if (onAddSuccess) 
+                onAddSuccess("Ошибка при сохранении новости", "error");
         } finally {
             setLoading(false);
         }

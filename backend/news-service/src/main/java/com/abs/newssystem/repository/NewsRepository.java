@@ -7,12 +7,14 @@ import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.JpaSpecificationExecutor;
 import org.springframework.stereotype.Repository;
 
+import java.time.LocalDateTime;
 import java.util.List;
 
 @Repository
 public interface NewsRepository extends JpaRepository<News, Long>, JpaSpecificationExecutor<News> {
     Page<News> findAll(Pageable pageable);
     List<News> findAllByIsAnalyzedFalse();
+    List<News> findAllByIsAnalyzedFalseAndPublishedDateBefore(LocalDateTime dateTime);
     boolean existsByOriginalLink(String originalLink);
     boolean existsByTitleAndContent(String title, String content);
 }

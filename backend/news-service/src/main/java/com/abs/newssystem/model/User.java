@@ -17,5 +17,5 @@ public class User {
     @Column(nullable = false)
     private String password;
 
-    private String role; // Например: ROLE_ADMIN или ROLE_USER
+    private String role;
 }

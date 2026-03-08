@@ -23,6 +23,14 @@ services:
     volumes:
       - ./backend/ml_service/best_model.weights.h5:/app/best_model.weights.h5
 
+  rabbitmq:
+    image: rabbitmq:3-management-alpine
+    container_name: rabbitmq_container
+    ports:
+      - "5672:5672"   # порт для кода
+      - "15672:15672" # порт для админки
+    restart: always
+
   backend:
     build: ./backend/news-service
     container_name: java_backend_container
@@ -33,15 +41,19 @@ services:
       - db
       #- ml-service
       - redis
+      - rabbitmq
     environment:
       SPRING_DATASOURCE_URL: jdbc:postgresql://db:5432/news_db
       SPRING_DATA_REDIS_HOST: redis
       SPRING_DATA_REDIS_PORT: 6379
       SPRING_DATASOURCE_USERNAME: postgres
       SPRING_DATASOURCE_PASSWORD: password
+      SPRING_RABBITMQ_HOST: rabbitmq
+      SPRING_RABBITMQ_PORT: 5672
       SPRING_JPA_HIBERNATE_DDL_AUTO: update
       SPRING_JPA_SHOW_SQL: "true"
       ML_SERVICE_URL: http://ml-service:5000/predict
+      
 
   frontend:
     build: ./frontend
